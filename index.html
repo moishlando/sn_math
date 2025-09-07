@@ -3,8 +3,8 @@
 <head>
   <meta charset="UTF-8">
   <title>Monospace Math Editor</title>
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
-  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+  <link rel="stylesheet" href="https://unpkg.com/mathlive/dist/mathlive.core.css">
+  <script src="https://unpkg.com/mathlive/dist/mathlive.min.js"></script>
   <style>
     body {
       margin: 0;
@@ -18,17 +18,9 @@
     #editor {
       flex: 1;
       padding: 15px;
-      overflow-y: auto;
       outline: none;
       white-space: pre-wrap;
       word-wrap: break-word;
-    }
-    .math {
-      background: #2e2e2e;
-      padding: 2px 4px;
-      border-radius: 4px;
-      cursor: pointer;
-      display: inline-block;
     }
     strong {
       font-weight: bold;
@@ -40,76 +32,64 @@
   <div id="editor" contenteditable="true"></div>
 
   <script>
-    const editor = document.getElementById("editor");
+    const editor = document.getElementById('editor');
 
-    // Render math + bold inline
-    function render() {
-      const text = editor.innerText;
+    // Convert **bold** into <strong>
+    function renderBold(text) {
+      return text.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
+    }
 
-      // Replace math ($...$ or $$...$$)
-      const regex = /\$\$(.+?)\$\$|\$(.+?)\$/g;
-      let html = text.replace(regex, (match, block, inline) => {
+    // Replace math inline with MathLive fields
+    function renderMath() {
+      const raw = editor.innerText;
+      let html = renderBold(raw);
+
+      // Replace $...$ or $$...$$
+      html = html.replace(/\$\$(.+?)\$\$|\$(.+?)\$/g, (match, block, inline) => {
         const expr = block || inline;
-        try {
-          return `<span class="math" contenteditable="false" data-latex="${expr}">${katex.renderToString(expr, { displayMode: !!block })}</span>`;
-        } catch {
-          return `<span class="math" data-latex="${expr}">${expr}</span>`;
-        }
+        return `<span class="mathfield" data-content="${expr}"></span>`;
       });
-
-      // Replace **bold**
-      html = html.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
-
-      // Update DOM without resetting caret completely
-      const sel = window.getSelection();
-      const range = sel.rangeCount ? sel.getRangeAt(0) : null;
 
       editor.innerHTML = html;
 
-      if (range) {
-        sel.removeAllRanges();
-        sel.addRange(range);
-      }
+      // Upgrade math spans to interactive MathLive fields
+      document.querySelectorAll('.mathfield').forEach(el => {
+        const mf = MathLive.makeMathField(el, {
+          defaultMode: 'math',
+          virtualKeyboardMode: 'off',
+          smartMode: false,
+          onContentDidChange: (mf) => syncBack(),
+        });
+        mf.setValue(el.dataset.content);
+      });
 
-      // Send note text back to Standard Notes
+      syncBack();
+    }
+
+    // Send text back to Standard Notes
+    function syncBack() {
+      let text = editor.innerText;
+
+      // Convert MathLive fields back to $...$
+      document.querySelectorAll('.mathfield').forEach(el => {
+        const latex = el.querySelector('math-field')?.getValue() || el.dataset.content;
+        text = text.replace(el.innerText, `$${latex}$`);
+      });
+
       window.parent.postMessage({ action: "set-text", text }, "*");
     }
 
-    // Click math span → switch back to raw
-    editor.addEventListener("click", (e) => {
-      if (e.target.classList.contains("math")) {
-        const expr = e.target.dataset.latex;
-        const raw = document.createTextNode(`$${expr}$`);
-        e.target.replaceWith(raw);
-        placeCaretAtEnd(editor);
-      }
-    });
-
-    // Re-render on typing
-    editor.addEventListener("keyup", render);
-
-    // Helper: caret to end
-    function placeCaretAtEnd(el) {
-      el.focus();
-      const range = document.createRange();
-      range.selectNodeContents(el);
-      range.collapse(false);
-      const sel = window.getSelection();
-      sel.removeAllRanges();
-      sel.addRange(range);
-    }
-
-    // Receive content from Standard Notes
+    // Standard Notes → load note content
     window.addEventListener("message", (event) => {
       if (event.data.action === "set-text") {
         editor.innerText = event.data.text || "";
-        render();
+        renderMath();
       }
     });
 
-    // Initial placeholder
-    editor.innerText = "Type notes in monospace. Use **bold**, $x^2$, or $$E=mc^2$$.";
-    render();
+    // Initial demo
+    editor.innerText = "Notes here. Bold with **stars**. Inline math: $x^2+y^2=z^2$ or $$E=mc^2$$.";
+    renderMath();
   </script>
 </body>
 </html>
