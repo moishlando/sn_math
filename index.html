@@ -34,6 +34,23 @@
     .bold-inner { font-weight:700; color:#ffd966; }
     /* optionally dim the literal ** markers */
     .bold-marker { opacity:0.4; }
+    /* caret color/width */
+.CodeMirror-cursor {
+  border-left: 2px solid #fff !important;  /* caret = white */
+}
+
+/* if you ever enable Vim “fat cursor” mode */
+.cm-fat-cursor .CodeMirror-cursor {
+  background: #fff !important;
+  border: none !important;
+  width: 2px;
+}
+
+/* optional: tweak selection so it’s visible, too */
+.CodeMirror-focused .CodeMirror-selected { 
+  background: rgba(255,255,255,0.18) !important;
+}
+
   </style>
 </head>
 <body>
