@@ -6,6 +6,6 @@
   "version": "1.0.0",
   "description": "Monospace editor with inline KaTeX ($...$, $$...$$) and **bold**.",
   "url": "https://moishlando.github.io/sn_math/index.html",
-  "download_url": "https://github.com/moishlando/sn_math/archive/refs/tags/v1.0.0.zip",
+  "download_url": "https://github.com/moishlando/sn_math/archive/refs/tags/v1.zip",
   "latest_url": "https://moishlando.github.io/sn_math/ext.json",
 }
