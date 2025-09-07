@@ -8,14 +8,17 @@
   <style>
     body {
       margin: 0;
-      padding: 0;
-      font-family: monospace;
       background: #1e1e1e;
       color: #f5f5f5;
+      font-family: monospace;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
     }
     #editor {
+      flex: 1;
       padding: 15px;
-      min-height: 100vh;
+      overflow-y: auto;
       outline: none;
       white-space: pre-wrap;
       word-wrap: break-word;
@@ -30,24 +33,29 @@
       font-weight: bold;
       color: #ffd700;
     }
+    #hidden {
+      display: none;
+    }
   </style>
 </head>
 <body>
-  <div id="editor" contenteditable="true"></div>
+  <textarea id="hidden"></textarea>
+  <div id="editor"></div>
 
   <script>
     const editor = document.getElementById("editor");
+    const hidden = document.getElementById("hidden");
 
-    function renderMathLive() {
-      const text = editor.innerText;
+    // Render math + bold from raw text
+    function render() {
+      let text = hidden.value;
 
       // Replace math
       const regex = /\$\$(.+?)\$\$|\$(.+?)\$/g;
       let html = text.replace(regex, (match, block, inline) => {
         const expr = block || inline;
         try {
-          const rendered = katex.renderToString(expr, { displayMode: !!block });
-          return `<span class="math" data-latex="${expr}">${rendered}</span>`;
+          return `<span class="math" data-latex="${expr}">${katex.renderToString(expr, { displayMode: !!block })}</span>`;
         } catch {
           return `<span class="math" data-latex="${expr}">${expr}</span>`;
         }
@@ -57,50 +65,42 @@
       html = html.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
 
       editor.innerHTML = html;
-      placeCaretAtEnd(editor);
 
-      // Send updated text back to Standard Notes
-      sendToSN(text);
-    }
-
-    // Click math to edit
-    editor.addEventListener("click", (e) => {
-      if (e.target.classList.contains("math")) {
-        e.target.outerHTML = `$${e.target.dataset.latex}$`;
-        placeCaretAtEnd(editor);
-      }
-    });
-
-    // Always render on typing
-    editor.addEventListener("keyup", renderMathLive);
-
-    // Keep caret at end
-    function placeCaretAtEnd(el) {
-      el.focus();
-      const range = document.createRange();
-      range.selectNodeContents(el);
-      range.collapse(false);
-      const sel = window.getSelection();
-      sel.removeAllRanges();
-      sel.addRange(range);
-    }
-
-    // ---- Standard Notes Integration ----
-
-    function sendToSN(text) {
+      // send back to Standard Notes
       window.parent.postMessage({ action: "set-text", text }, "*");
     }
 
-    window.addEventListener("message", (event) => {
-      if (event.data.action === "set-text") {
-        editor.innerText = event.data.text || "";
-        renderMathLive();
+    // Click on math span → switch to raw
+    editor.addEventListener("click", (e) => {
+      if (e.target.classList.contains("math")) {
+        const expr = e.target.dataset.latex;
+        const newNode = document.createTextNode(`$${expr}$`);
+        e.target.replaceWith(newNode);
+        updateHiddenFromEditor();
       }
     });
 
-    // Initial placeholder text
-    editor.innerText = "Type notes in monospace. Use **bold**, $x^2$, or $$E=mc^2$$.";
-    renderMathLive();
+    // Convert rendered DOM back to raw text
+    function updateHiddenFromEditor() {
+      hidden.value = editor.innerText;
+      render();
+    }
+
+    // Listen for raw edits (only when user types in raw math mode)
+    editor.addEventListener("input", updateHiddenFromEditor);
+
+    // Standard Notes → load note content
+    window.addEventListener("message", (event) => {
+      if (event.data.action === "set-text") {
+        hidden.value = event.data.text || "";
+        render();
+      }
+    });
+
+    // Initial content
+    hidden.value = "Type in monospace. Use **bold** and math like $x^2 + y^2 = z^2$ or $$E=mc^2$$.";
+    render();
   </script>
 </body>
 </html>
+
