@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="en">
 <head>
-  <meta charset="utf-8">
+  <meta charset="utf-8" />
   <title>SN Monospace Math (Inline, No Flicker)</title>
 
   <!-- CodeMirror 5 (UMD) -->
@@ -14,46 +14,58 @@
   <script src="https://cdn.jsdelivr.net/npm/katex@0.16.10/dist/katex.min.js"></script>
 
   <style>
-    html, body { margin:0; height:100%; background:#1e1e1e; }
+    /* Base light theme */
+    html, body {
+      height: 100%;
+      margin: 0;
+      background: #ffffff;  /* white */
+      color: #111111;       /* near-black text */
+    }
     .CodeMirror {
       height: 100vh;
+      background: #ffffff !important;
+      color: #111111 !important;
       font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
       font-size: 14px;
-      color: #f5f5f5;
-      background: #1e1e1e;
+      line-height: 1.5;
     }
-    /* rendered KaTeX container */
+
+    /* Caret (cursor) — standard black */
+    .CodeMirror-cursor {
+      border-left: 2px solid #000000 !important; /* black caret */
+    }
+    /* Selection colors */
+    .CodeMirror-focused .CodeMirror-selected {
+      background: rgba(37, 99, 235, 0.15) !important; /* light blue */
+    }
+    .CodeMirror-selected {
+      background: rgba(0, 0, 0, 0.08) !important;     /* subtle gray when unfocused */
+    }
+
+    /* (Optional) gutters if you enable line numbers later */
+    .CodeMirror-gutters {
+      background: #f9fafb !important;
+      border-right: 1px solid #e5e7eb !important;
+      color: #6b7280 !important;
+    }
+
+    /* Rendered KaTeX chip (inline/block math) */
     .katex-chip {
       display: inline-block;
-      background:#2b2b2b;
-      border-radius:4px;
-      padding:2px 4px;
+      background: #f3f4f6;
+      border: 1px solid #e5e7eb;
+      border-radius: 4px;
+      padding: 2px 4px;
       cursor: pointer;
     }
-    /* bold highlight for **text** (the inner part) */
-    .bold-inner { font-weight:700; color:#ffd966; }
-    /* optionally dim the literal ** markers */
-    .bold-marker { opacity:0.4; }
-    /* caret color/width */
-.CodeMirror-cursor {
-  border-left: 2px solid #fff !important;  /* caret = white */
-}
 
-/* if you ever enable Vim “fat cursor” mode */
-.cm-fat-cursor .CodeMirror-cursor {
-  background: #fff !important;
-  border: none !important;
-  width: 2px;
-}
-
-/* optional: tweak selection so it’s visible, too */
-.CodeMirror-focused .CodeMirror-selected { 
-  background: rgba(255,255,255,0.18) !important;
-}
-
+    /* Bold inner highlight for **text** */
+    .bold-inner { font-weight: 700; color: #111111; }
+    /* .bold-marker { opacity: 0.5; }  // enable if you want dimmed ** markers */
   </style>
 </head>
 <body>
+  <!-- Optional seed if SN doesn't send content immediately -->
   <textarea id="seed" style="display:none;">Monospace notes.
 Bold with **stars**. Inline math: $x^2+y^2=z^2$
 Block math:
@@ -61,8 +73,7 @@ $$
 E=mc^2
 $$
 
-Click a rendered formula to edit; it re-renders when the $…$ is balanced.
-</textarea>
+Click a rendered formula to edit; it re-renders when the $…$ is balanced.</textarea>
   <div id="host"></div>
 
 <script>
@@ -73,6 +84,7 @@ Click a rendered formula to edit; it re-renders when the $…$ is balanced.
     value: document.getElementById('seed').value,
     lineNumbers: false,
     lineWrapping: true,
+    viewportMargin: Infinity,  // render entire doc so decorations stay stable
     tabindex: 0
   });
 
@@ -104,7 +116,7 @@ Click a rendered formula to edit; it re-renders when the $…$ is balanced.
     clearMarks(mathMarks);
     clearMarks(boldMarks);
 
-    // --- Math: $$...$$ (multiline) ---
+    // --- Block math: $$...$$ (multiline)
     const reBlock = /\$\$([\s\S]*?)\$\$/g;
     let m;
     while ((m = reBlock.exec(text)) !== null) {
@@ -116,42 +128,29 @@ Click a rendered formula to edit; it re-renders when the $…$ is balanced.
       const fromPos = posFromIndex(from);
       const toPos   = posFromIndex(to);
 
-      // Build widget
       const span = document.createElement('span');
       span.className = 'katex-chip';
-      try {
-        span.innerHTML = katex.renderToString(expr, {displayMode:true, throwOnError:false});
-      } catch (_) {
-        span.textContent = expr;
-      }
-      // Clicking on widget clears the mark → restores raw $$...$$ for editing
-      span.addEventListener('mousedown', (ev) => {
-        ev.preventDefault();
-        // clear the mark by finding it via coords
-        for (const mk of mathMarks) {
-          const r = mk.find();
-          if (!r) continue;
-          if (CodeMirror.cmpPos(r.from, fromPos)===0 && CodeMirror.cmpPos(r.to, toPos)===0) {
-            mk.clear();
-            cm.focus();
-            // place caret just after opening $$ (from + 2)
-            cm.setCursor(posFromIndex(from + 2));
-            break;
-          }
-        }
-      });
+      try { span.innerHTML = katex.renderToString(expr, {displayMode:true, throwOnError:false}); }
+      catch (_) { span.textContent = expr; }
 
+      // Create mark first so we can reference it in the click handler
       const mk = cm.markText(fromPos, toPos, {
         replacedWith: span,
         handleMouseEvents: true,
-        atomic: true,       // keep it as a single unit until user clicks
+        atomic: true,
         inclusiveLeft: false,
         inclusiveRight: false
+      });
+      span.addEventListener('mousedown', (ev) => {
+        ev.preventDefault();
+        mk.clear();
+        cm.focus();
+        cm.setCursor(posFromIndex(from + 2)); // after opening $$
       });
       mathMarks.push(mk);
     }
 
-    // --- Math: $...$ (single line, no newline inside) ---
+    // --- Inline math: $...$ (no newline inside)
     const reInline = /\$(?:\\\$|[^\n$])+\$/g;
     while ((m = reInline.exec(text)) !== null) {
       const raw = m[0];
@@ -166,24 +165,8 @@ Click a rendered formula to edit; it re-renders when the $…$ is balanced.
 
       const span = document.createElement('span');
       span.className = 'katex-chip';
-      try {
-        span.innerHTML = katex.renderToString(expr, {displayMode:false, throwOnError:false});
-      } catch (_) {
-        span.textContent = expr;
-      }
-      span.addEventListener('mousedown', (ev) => {
-        ev.preventDefault();
-        for (const mk of mathMarks) {
-          const r = mk.find();
-          if (!r) continue;
-          if (CodeMirror.cmpPos(r.from, fromPos)===0 && CodeMirror.cmpPos(r.to, toPos)===0) {
-            mk.clear();
-            cm.focus();
-            cm.setCursor(posFromIndex(from + 1)); // after opening $
-            break;
-          }
-        }
-      });
+      try { span.innerHTML = katex.renderToString(expr, {displayMode:false, throwOnError:false}); }
+      catch (_) { span.textContent = expr; }
 
       const mk = cm.markText(fromPos, toPos, {
         replacedWith: span,
@@ -192,39 +175,43 @@ Click a rendered formula to edit; it re-renders when the $…$ is balanced.
         inclusiveLeft: false,
         inclusiveRight: false
       });
+      span.addEventListener('mousedown', (ev) => {
+        ev.preventDefault();
+        mk.clear();
+        cm.focus();
+        cm.setCursor(posFromIndex(from + 1)); // after opening $
+      });
       mathMarks.push(mk);
     }
 
-    // --- Bold: **inner** highlight (keep raw visible/editable when cursor inside) ---
+    // --- Bold: **inner** highlight (keep raw when caret inside)
     const reBold = /\*\*([^\n*][\s\S]*?[^\n*])\*\*/g;
     while ((m = reBold.exec(text)) !== null) {
       const fullFrom = m.index;
       const fullTo   = m.index + m[0].length;
+      if (selectionIntersects(fullFrom, fullTo)) continue; // show raw while editing
+
       const innerFrom = fullFrom + 2, innerTo = fullTo - 2;
 
-      if (selectionIntersects(fullFrom, fullTo)) continue; // editable raw while cursor inside
-
-      // mark inner as bold
       boldMarks.push(cm.markText(posFromIndex(innerFrom), posFromIndex(innerTo), {
         className: 'bold-inner',
         inclusiveLeft: false,
         inclusiveRight: false
       }));
 
-      // (optional) dim markers **
+      // If you want to dim the ** markers, uncomment:
       // boldMarks.push(cm.markText(posFromIndex(fullFrom), posFromIndex(innerFrom), {className:'bold-marker'}));
       // boldMarks.push(cm.markText(posFromIndex(innerTo), posFromIndex(fullTo),   {className:'bold-marker'}));
     }
 
-    // sync to Standard Notes (raw text)
     debouncedSyncToSN();
   }
 
-  // --- Re-render on changes & on cursor moves (so editing zones stay raw) ---
+  // Re-render on content or cursor changes (so math zones toggle raw/rendered seamlessly)
   cm.on('changes', renderDecorations);
   cm.on('cursorActivity', renderDecorations);
 
-  // --- SN integration ---
+  // --- Standard Notes integration ---
   const debouncedSyncToSN = debounce(() => {
     window.parent.postMessage({ action: 'set-text', text: cm.getValue() }, '*');
   }, 120);
@@ -244,9 +231,8 @@ Click a rendered formula to edit; it re-renders when the $…$ is balanced.
   // util: debounce
   function debounce(fn, ms){ let t; return (...a)=>{ clearTimeout(t); t=setTimeout(()=>fn(...a), ms); }; }
 
-  // initial paint
+  // Initial paint
   renderDecorations();
-
 })();
 </script>
 </body>
