@@ -1,190 +1,236 @@
 <!doctype html>
 <html lang="en">
 <head>
-  <meta charset="utf-8" />
-  <title>SN Monospace Math (Inline)</title>
+  <meta charset="utf-8">
+  <title>SN Monospace Math (Inline, No Flicker)</title>
 
-  <!-- KaTeX -->
+  <!-- CodeMirror 5 (UMD) -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/codemirror@5/lib/codemirror.css">
+  <script src="https://cdn.jsdelivr.net/npm/codemirror@5/lib/codemirror.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/codemirror@5/addon/selection/mark-selection.js"></script>
+
+  <!-- KaTeX (UMD) -->
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.10/dist/katex.min.css">
   <script src="https://cdn.jsdelivr.net/npm/katex@0.16.10/dist/katex.min.js"></script>
 
   <style>
-    html, body { height: 100%; margin: 0; background:#1e1e1e; color:#f5f5f5; }
-    .cm-editor { height: 100vh; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace; }
-    .cm-content { caret-color: #fff; }
-    .katex-widget { background:#2b2b2b; padding:2px 4px; border-radius:4px; cursor:pointer; display:inline-block; }
-    .bold-mark { font-weight:700; color:#ffd966; } /* inner bold highlight */
-    /* optional: mute the literal ** markers visually (still present in text model) */
-    .asterisk-mute { opacity: 0.4; }
+    html, body { margin:0; height:100%; background:#1e1e1e; }
+    .CodeMirror {
+      height: 100vh;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+      font-size: 14px;
+      color: #f5f5f5;
+      background: #1e1e1e;
+    }
+    /* rendered KaTeX container */
+    .katex-chip {
+      display: inline-block;
+      background:#2b2b2b;
+      border-radius:4px;
+      padding:2px 4px;
+      cursor: pointer;
+    }
+    /* bold highlight for **text** (the inner part) */
+    .bold-inner { font-weight:700; color:#ffd966; }
+    /* optionally dim the literal ** markers */
+    .bold-marker { opacity:0.4; }
   </style>
 </head>
 <body>
+  <textarea id="seed" style="display:none;">Monospace notes.
+Bold with **stars**. Inline math: $x^2+y^2=z^2$
+Block math:
+$$
+E=mc^2
+$$
 
-<div id="mount"></div>
+Click a rendered formula to edit; it re-renders when the $…$ is balanced.
+</textarea>
+  <div id="host"></div>
 
-<script type="module">
-  // --- Imports (ESM via CDN) ---
-  import {EditorState}        from "https://esm.sh/@codemirror/state@6";
-  import {EditorView, keymap, Decoration, WidgetType, ViewPlugin, ViewUpdate} 
-                              from "https://esm.sh/@codemirror/view@6";
-  import {defaultKeymap, history, historyKeymap} 
-                              from "https://esm.sh/@codemirror/commands@6";
-  import {indentWithTab}      from "https://esm.sh/@codemirror/commands@6";
+<script>
+(function(){
+  // --- Editor init ---
+  const host = document.getElementById('host');
+  const cm = CodeMirror(host, {
+    value: document.getElementById('seed').value,
+    lineNumbers: false,
+    lineWrapping: true,
+    tabindex: 0
+  });
 
-  // ---------- Math Decoration (KaTeX) ----------
-  class KaTeXWidget extends WidgetType {
-    constructor(tex, display) {
-      super(); this.tex = tex; this.display = display;
+  // Track current marks so we can clear/reapply without flicker
+  let mathMarks = [];
+  let boldMarks = [];
+
+  function clearMarks(arr) {
+    for (const m of arr) m.clear();
+    arr.length = 0;
+  }
+
+  function posFromIndex(idx) { return cm.posFromIndex(idx); }
+  function indexFromPos(pos) { return cm.indexFromPos(pos); }
+
+  function selectionIntersects(fromIdx, toIdx) {
+    const ranges = cm.listSelections();
+    for (const r of ranges) {
+      const a = indexFromPos(r.anchor);
+      const b = indexFromPos(r.head);
+      const lo = Math.min(a,b), hi = Math.max(a,b);
+      if (!(hi <= fromIdx || lo >= toIdx)) return true;
     }
-    eq(other) { return other.tex === this.tex && other.display === this.display; }
-    toDOM() {
-      const span = document.createElement("span");
-      span.className = "katex-widget";
+    return false;
+  }
+
+  function renderDecorations() {
+    const text = cm.getValue();
+    clearMarks(mathMarks);
+    clearMarks(boldMarks);
+
+    // --- Math: $$...$$ (multiline) ---
+    const reBlock = /\$\$([\s\S]*?)\$\$/g;
+    let m;
+    while ((m = reBlock.exec(text)) !== null) {
+      const from = m.index;
+      const to   = m.index + m[0].length;
+      if (selectionIntersects(from, to)) continue; // keep raw while editing
+
+      const expr = m[1];
+      const fromPos = posFromIndex(from);
+      const toPos   = posFromIndex(to);
+
+      // Build widget
+      const span = document.createElement('span');
+      span.className = 'katex-chip';
       try {
-        span.innerHTML = katex.renderToString(this.tex, {displayMode: this.display, throwOnError:false});
-      } catch { span.textContent = this.tex; }
-      // clicking the widget should place the caret inside the underlying $...$
-      span.addEventListener("mousedown", (e) => { e.preventDefault(); });
-      return span;
-    }
-    ignoreEvent() { return false; }
-  }
-
-  // Scan doc for $$...$$ (can be multiline) and $...$ (single line), build decorations.
-  function mathDecorations(view) {
-    const decos = [];
-    const sel = view.state.selection.main;
-    const doc = view.state.doc;
-    const text = doc.toString();
-
-    // helper to check if selection intersects [from, to)
-    const intersects = (from, to) => !(sel.to <= from || sel.from >= to);
-
-    // 1) block math $$...$$ (allow newlines)
-    {
-      const reBlock = /\$\$([\s\S]*?)\$\$/g;  // greedy across lines
-      let m;
-      while ((m = reBlock.exec(text)) !== null) {
-        const from = m.index, to = m.index + m[0].length;
-        if (intersects(from, to)) continue; // skip rendering when caret inside → keep raw for editing
-        const tex = m[1];
-        const deco = Decoration.widget({
-          widget: new KaTeXWidget(tex, true),
-          side: 0
-        }).range(from);
-        // hide the raw text by covering it with a widget and adding a zero-width placeholder after
-        decos.push(deco, Decoration.replace({}).range(from, to));
+        span.innerHTML = katex.renderToString(expr, {displayMode:true, throwOnError:false});
+      } catch (_) {
+        span.textContent = expr;
       }
-    }
-
-    // 2) inline math $...$ (no newlines inside)
-    {
-      const reInline = /\$(?:\\\$|[^\n$])+\$/g;
-      let m;
-      while ((m = reInline.exec(text)) !== null) {
-        const raw = m[0];
-        // ignore $$...$$ which block regex already handled (starts/ends with $$)
-        if (raw.startsWith("$$") || raw.endsWith("$$")) continue;
-        const from = m.index, to = m.index + raw.length;
-        if (intersects(from, to)) continue;
-        const tex = raw.slice(1, -1);
-        const deco = Decoration.widget({
-          widget: new KaTeXWidget(tex, false),
-          side: 0
-        }).range(from);
-        decos.push(deco, Decoration.replace({}).range(from, to));
-      }
-    }
-
-    // 3) **bold** inner highlight (optional)
-    {
-      const reBold = /\*\*([^\n*][\s\S]*?[^\n*])\*\*/g;
-      let m;
-      while ((m = reBold.exec(text)) !== null) {
-        const fullFrom = m.index, fullTo = m.index + m[0].length;
-        if (intersects(fullFrom, fullTo)) continue; // editable raw when caret inside
-        const innerFrom = fullFrom + 2, innerTo = fullTo - 2;
-        decos.push(Decoration.mark({class: "bold-mark"}).range(innerFrom, innerTo));
-        // (Optional) visually mute the literal ** markers:
-        // decos.push(Decoration.mark({class:"asterisk-mute"}).range(fullFrom, innerFrom));
-        // decos.push(Decoration.mark({class:"asterisk-mute"}).range(innerTo, fullTo));
-      }
-    }
-
-    return Decoration.set(decos, true);
-  }
-
-  const mathPlugin = ViewPlugin.fromClass(class {
-    constructor(view) { this.decos = mathDecorations(view); }
-    update(update) {
-      if (update.docChanged || update.selectionSet) {
-        this.decos = mathDecorations(update.view);
-      }
-    }
-  }, { decorations: v => v.decos });
-
-  // ---------- SN sync ----------
-  function postToSN(view) {
-    const text = view.state.doc.toString();
-    window.parent.postMessage({ action: "set-text", text }, "*");
-  }
-
-  // Debounce helper (limits SN messages)
-  function debounce(fn, ms) {
-    let t; return (...args) => { clearTimeout(t); t = setTimeout(() => fn(...args), ms); };
-  }
-  const debouncedPost = debounce(postToSN, 120);
-
-  // Notify SN on content changes
-  const snSyncPlugin = ViewPlugin.fromClass(class{
-    update(u) { if (u.docChanged) debouncedPost(u.view); }
-  });
-
-  // ---------- Editor Init ----------
-  const startText = "Monospace notes.\nBold with **stars**.\nInline $x^2+y^2=z^2$ and block:\n$$E=mc^2$$\nClick rendered math to place the caret and edit; it will auto-render when the $...$ is balanced.";
-  const state = EditorState.create({
-    doc: startText,
-    extensions: [
-      history(),
-      keymap.of([...defaultKeymap, ...historyKeymap, indentWithTab]),
-      EditorView.lineWrapping,
-      mathPlugin,
-      snSyncPlugin
-    ]
-  });
-
-  const view = new EditorView({ state, parent: document.getElementById("mount") });
-
-  // Receive content from Standard Notes
-  window.addEventListener("message", (e) => {
-    if (e.data?.action === "set-text") {
-      const text = e.data.text ?? "";
-      if (text === view.state.doc.toString()) return;
-      view.dispatch({
-        changes: { from: 0, to: view.state.doc.length, insert: text }
+      // Clicking on widget clears the mark → restores raw $$...$$ for editing
+      span.addEventListener('mousedown', (ev) => {
+        ev.preventDefault();
+        // clear the mark by finding it via coords
+        for (const mk of mathMarks) {
+          const r = mk.find();
+          if (!r) continue;
+          if (CodeMirror.cmpPos(r.from, fromPos)===0 && CodeMirror.cmpPos(r.to, toPos)===0) {
+            mk.clear();
+            cm.focus();
+            // place caret just after opening $$ (from + 2)
+            cm.setCursor(posFromIndex(from + 2));
+            break;
+          }
+        }
       });
+
+      const mk = cm.markText(fromPos, toPos, {
+        replacedWith: span,
+        handleMouseEvents: true,
+        atomic: true,       // keep it as a single unit until user clicks
+        inclusiveLeft: false,
+        inclusiveRight: false
+      });
+      mathMarks.push(mk);
+    }
+
+    // --- Math: $...$ (single line, no newline inside) ---
+    const reInline = /\$(?:\\\$|[^\n$])+\$/g;
+    while ((m = reInline.exec(text)) !== null) {
+      const raw = m[0];
+      if (raw.startsWith('$$') || raw.endsWith('$$')) continue; // handled above
+      const from = m.index;
+      const to   = m.index + raw.length;
+      if (selectionIntersects(from, to)) continue;
+
+      const expr = raw.slice(1, -1);
+      const fromPos = posFromIndex(from);
+      const toPos   = posFromIndex(to);
+
+      const span = document.createElement('span');
+      span.className = 'katex-chip';
+      try {
+        span.innerHTML = katex.renderToString(expr, {displayMode:false, throwOnError:false});
+      } catch (_) {
+        span.textContent = expr;
+      }
+      span.addEventListener('mousedown', (ev) => {
+        ev.preventDefault();
+        for (const mk of mathMarks) {
+          const r = mk.find();
+          if (!r) continue;
+          if (CodeMirror.cmpPos(r.from, fromPos)===0 && CodeMirror.cmpPos(r.to, toPos)===0) {
+            mk.clear();
+            cm.focus();
+            cm.setCursor(posFromIndex(from + 1)); // after opening $
+            break;
+          }
+        }
+      });
+
+      const mk = cm.markText(fromPos, toPos, {
+        replacedWith: span,
+        handleMouseEvents: true,
+        atomic: true,
+        inclusiveLeft: false,
+        inclusiveRight: false
+      });
+      mathMarks.push(mk);
+    }
+
+    // --- Bold: **inner** highlight (keep raw visible/editable when cursor inside) ---
+    const reBold = /\*\*([^\n*][\s\S]*?[^\n*])\*\*/g;
+    while ((m = reBold.exec(text)) !== null) {
+      const fullFrom = m.index;
+      const fullTo   = m.index + m[0].length;
+      const innerFrom = fullFrom + 2, innerTo = fullTo - 2;
+
+      if (selectionIntersects(fullFrom, fullTo)) continue; // editable raw while cursor inside
+
+      // mark inner as bold
+      boldMarks.push(cm.markText(posFromIndex(innerFrom), posFromIndex(innerTo), {
+        className: 'bold-inner',
+        inclusiveLeft: false,
+        inclusiveRight: false
+      }));
+
+      // (optional) dim markers **
+      // boldMarks.push(cm.markText(posFromIndex(fullFrom), posFromIndex(innerFrom), {className:'bold-marker'}));
+      // boldMarks.push(cm.markText(posFromIndex(innerTo), posFromIndex(fullTo),   {className:'bold-marker'}));
+    }
+
+    // sync to Standard Notes (raw text)
+    debouncedSyncToSN();
+  }
+
+  // --- Re-render on changes & on cursor moves (so editing zones stay raw) ---
+  cm.on('changes', renderDecorations);
+  cm.on('cursorActivity', renderDecorations);
+
+  // --- SN integration ---
+  const debouncedSyncToSN = debounce(() => {
+    window.parent.postMessage({ action: 'set-text', text: cm.getValue() }, '*');
+  }, 120);
+
+  window.addEventListener('message', (e) => {
+    if (e.data && e.data.action === 'set-text') {
+      const incoming = e.data.text || '';
+      if (incoming !== cm.getValue()) {
+        const cur = cm.getCursor();
+        cm.setValue(incoming);
+        cm.setCursor(cur);
+      }
+      renderDecorations();
     }
   });
 
-  // Send initial content to SN once (so the note shows something if new)
-  postToSN(view);
+  // util: debounce
+  function debounce(fn, ms){ let t; return (...a)=>{ clearTimeout(t); t=setTimeout(()=>fn(...a), ms); }; }
 
-  // Clicking a KaTeX widget should move caret inside the underlying math
-  document.addEventListener("mousedown", (ev) => {
-    const w = ev.target.closest(".katex-widget");
-    if (!w) return;
-    // Find the position of the widget by DOM -> pos mapping
-    const pos = view.posAtDOM(w, 0);
-    // Place caret just after the opening $, which is pos in the model
-    // We search backward to the next '$' before this pos (safe fallback: pos)
-    const docStr = view.state.doc.toString();
-    let from = docStr.lastIndexOf("$", pos);
-    if (from >= 0 && docStr[from-1] === "$") from--; // handle $$
-    if (from < 0) from = pos;
-    view.dispatch({ selection: { anchor: from + 1 } }); // inside the dollars
-    ev.preventDefault();
-  });
+  // initial paint
+  renderDecorations();
+
+})();
 </script>
-
 </body>
 </html>
