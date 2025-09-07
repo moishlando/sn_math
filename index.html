@@ -2,54 +2,30 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <title>SN Monospace Math (Inline, No Flicker)</title>
+  <title>Monospace Math Editor</title>
 
-  <!-- CodeMirror 5 (UMD) -->
+  <!-- CodeMirror 5 -->
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/codemirror@5/lib/codemirror.css">
   <script src="https://cdn.jsdelivr.net/npm/codemirror@5/lib/codemirror.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/codemirror@5/addon/selection/mark-selection.js"></script>
 
-  <!-- KaTeX (UMD) -->
+  <!-- KaTeX -->
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.10/dist/katex.min.css">
   <script src="https://cdn.jsdelivr.net/npm/katex@0.16.10/dist/katex.min.js"></script>
 
   <style>
-    /* Base light theme */
-    html, body {
-      height: 100%;
-      margin: 0;
-      background: #ffffff;  /* white */
-      color: #111111;       /* near-black text */
-    }
+    html, body { height: 100%; margin: 0; background: #fff; color: #111; }
     .CodeMirror {
       height: 100vh;
-      background: #ffffff !important;
-      color: #111111 !important;
+      background: #fff !important;
+      color: #111 !important;
       font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
       font-size: 14px;
       line-height: 1.5;
     }
+    .CodeMirror-cursor { border-left: 2px solid #000 !important; }
+    .CodeMirror-focused .CodeMirror-selected { background: rgba(37,99,235,0.15) !important; }
+    .CodeMirror-selected { background: rgba(0,0,0,0.08) !important; }
 
-    /* Caret (cursor) — standard black */
-    .CodeMirror-cursor {
-      border-left: 2px solid #000000 !important; /* black caret */
-    }
-    /* Selection colors */
-    .CodeMirror-focused .CodeMirror-selected {
-      background: rgba(37, 99, 235, 0.15) !important; /* light blue */
-    }
-    .CodeMirror-selected {
-      background: rgba(0, 0, 0, 0.08) !important;     /* subtle gray when unfocused */
-    }
-
-    /* (Optional) gutters if you enable line numbers later */
-    .CodeMirror-gutters {
-      background: #f9fafb !important;
-      border-right: 1px solid #e5e7eb !important;
-      color: #6b7280 !important;
-    }
-
-    /* Rendered KaTeX chip (inline/block math) */
     .katex-chip {
       display: inline-block;
       background: #f3f4f6;
@@ -58,180 +34,99 @@
       padding: 2px 4px;
       cursor: pointer;
     }
-
-    /* Bold inner highlight for **text** */
-    .bold-inner { font-weight: 700; color: #111111; }
-    /* .bold-marker { opacity: 0.5; }  // enable if you want dimmed ** markers */
+    .bold-inner { font-weight: 700; color: #111; }
   </style>
 </head>
 <body>
-  <!-- Optional seed if SN doesn't send content immediately -->
-  <textarea id="seed" style="display:none;">Monospace notes.
-Bold with **stars**. Inline math: $x^2+y^2=z^2$
-Block math:
-$$
-E=mc^2
-$$
-
-Click a rendered formula to edit; it re-renders when the $…$ is balanced.</textarea>
   <div id="host"></div>
 
 <script>
 (function(){
-  // --- Editor init ---
   const host = document.getElementById('host');
   const cm = CodeMirror(host, {
-    value: document.getElementById('seed').value,
+    value: "Type **bold** or math like $x^2$ or $$E=mc^2$$",
     lineNumbers: false,
     lineWrapping: true,
-    viewportMargin: Infinity,  // render entire doc so decorations stay stable
-    tabindex: 0
+    viewportMargin: Infinity
   });
 
-  // Track current marks so we can clear/reapply without flicker
-  let mathMarks = [];
-  let boldMarks = [];
+  let mathMarks = [], boldMarks = [];
 
-  function clearMarks(arr) {
-    for (const m of arr) m.clear();
-    arr.length = 0;
-  }
-
+  function clearMarks(arr) { for (const m of arr) m.clear(); arr.length = 0; }
   function posFromIndex(idx) { return cm.posFromIndex(idx); }
   function indexFromPos(pos) { return cm.indexFromPos(pos); }
-
-  function selectionIntersects(fromIdx, toIdx) {
-    const ranges = cm.listSelections();
-    for (const r of ranges) {
-      const a = indexFromPos(r.anchor);
-      const b = indexFromPos(r.head);
-      const lo = Math.min(a,b), hi = Math.max(a,b);
-      if (!(hi <= fromIdx || lo >= toIdx)) return true;
-    }
-    return false;
+  function selectionIntersects(fromIdx,toIdx){
+    for (const r of cm.listSelections()) {
+      const a=indexFromPos(r.anchor), b=indexFromPos(r.head);
+      if (!(Math.max(a,b)<=fromIdx || Math.min(a,b)>=toIdx)) return true;
+    } return false;
   }
 
   function renderDecorations() {
     const text = cm.getValue();
-    clearMarks(mathMarks);
-    clearMarks(boldMarks);
+    clearMarks(mathMarks); clearMarks(boldMarks);
 
-    // --- Block math: $$...$$ (multiline)
-    const reBlock = /\$\$([\s\S]*?)\$\$/g;
-    let m;
-    while ((m = reBlock.exec(text)) !== null) {
-      const from = m.index;
-      const to   = m.index + m[0].length;
-      if (selectionIntersects(from, to)) continue; // keep raw while editing
-
-      const expr = m[1];
-      const fromPos = posFromIndex(from);
-      const toPos   = posFromIndex(to);
-
-      const span = document.createElement('span');
-      span.className = 'katex-chip';
-      try { span.innerHTML = katex.renderToString(expr, {displayMode:true, throwOnError:false}); }
-      catch (_) { span.textContent = expr; }
-
-      // Create mark first so we can reference it in the click handler
-      const mk = cm.markText(fromPos, toPos, {
-        replacedWith: span,
-        handleMouseEvents: true,
-        atomic: true,
-        inclusiveLeft: false,
-        inclusiveRight: false
-      });
-      span.addEventListener('mousedown', (ev) => {
-        ev.preventDefault();
-        mk.clear();
-        cm.focus();
-        cm.setCursor(posFromIndex(from + 2)); // after opening $$
-      });
+    // Block math $$...$$
+    const reBlock = /\$\$([\s\S]*?)\$\$/g; let m;
+    while ((m = reBlock.exec(text))) {
+      const from=m.index, to=from+m[0].length;
+      if (selectionIntersects(from,to)) continue;
+      const expr=m[1];
+      const span=document.createElement("span"); span.className="katex-chip";
+      try{ span.innerHTML=katex.renderToString(expr,{displayMode:true,throwOnError:false}); }
+      catch{ span.textContent=expr; }
+      const mk=cm.markText(posFromIndex(from),posFromIndex(to),{replacedWith:span,atomic:true});
+      span.addEventListener("mousedown",e=>{e.preventDefault();mk.clear();cm.focus();cm.setCursor(posFromIndex(from+2));});
       mathMarks.push(mk);
     }
 
-    // --- Inline math: $...$ (no newline inside)
-    const reInline = /\$(?:\\\$|[^\n$])+\$/g;
-    while ((m = reInline.exec(text)) !== null) {
-      const raw = m[0];
-      if (raw.startsWith('$$') || raw.endsWith('$$')) continue; // handled above
-      const from = m.index;
-      const to   = m.index + raw.length;
-      if (selectionIntersects(from, to)) continue;
-
-      const expr = raw.slice(1, -1);
-      const fromPos = posFromIndex(from);
-      const toPos   = posFromIndex(to);
-
-      const span = document.createElement('span');
-      span.className = 'katex-chip';
-      try { span.innerHTML = katex.renderToString(expr, {displayMode:false, throwOnError:false}); }
-      catch (_) { span.textContent = expr; }
-
-      const mk = cm.markText(fromPos, toPos, {
-        replacedWith: span,
-        handleMouseEvents: true,
-        atomic: true,
-        inclusiveLeft: false,
-        inclusiveRight: false
-      });
-      span.addEventListener('mousedown', (ev) => {
-        ev.preventDefault();
-        mk.clear();
-        cm.focus();
-        cm.setCursor(posFromIndex(from + 1)); // after opening $
-      });
+    // Inline math $...$
+    const reInline=/\$(?:\\\$|[^\n$])+\$/g;
+    while ((m = reInline.exec(text))) {
+      const raw=m[0]; if(raw.startsWith("$$")||raw.endsWith("$$")) continue;
+      const from=m.index,to=from+raw.length;
+      if(selectionIntersects(from,to)) continue;
+      const expr=raw.slice(1,-1);
+      const span=document.createElement("span"); span.className="katex-chip";
+      try{ span.innerHTML=katex.renderToString(expr,{throwOnError:false}); }
+      catch{ span.textContent=expr; }
+      const mk=cm.markText(posFromIndex(from),posFromIndex(to),{replacedWith:span,atomic:true});
+      span.addEventListener("mousedown",e=>{e.preventDefault();mk.clear();cm.focus();cm.setCursor(posFromIndex(from+1));});
       mathMarks.push(mk);
     }
 
-    // --- Bold: **inner** highlight (keep raw when caret inside)
-    const reBold = /\*\*([^\n*][\s\S]*?[^\n*])\*\*/g;
-    while ((m = reBold.exec(text)) !== null) {
-      const fullFrom = m.index;
-      const fullTo   = m.index + m[0].length;
-      if (selectionIntersects(fullFrom, fullTo)) continue; // show raw while editing
-
-      const innerFrom = fullFrom + 2, innerTo = fullTo - 2;
-
-      boldMarks.push(cm.markText(posFromIndex(innerFrom), posFromIndex(innerTo), {
-        className: 'bold-inner',
-        inclusiveLeft: false,
-        inclusiveRight: false
-      }));
-
-      // If you want to dim the ** markers, uncomment:
-      // boldMarks.push(cm.markText(posFromIndex(fullFrom), posFromIndex(innerFrom), {className:'bold-marker'}));
-      // boldMarks.push(cm.markText(posFromIndex(innerTo), posFromIndex(fullTo),   {className:'bold-marker'}));
+    // Bold **...**
+    const reBold=/\*\*([^\n*][\s\S]*?[^\n*])\*\*/g;
+    while((m=reBold.exec(text))){
+      const from=m.index,to=from+m[0].length;
+      if(selectionIntersects(from,to)) continue;
+      const innerFrom=from+2,innerTo=to-2;
+      boldMarks.push(cm.markText(posFromIndex(innerFrom),posFromIndex(innerTo),{className:"bold-inner"}));
     }
 
-    debouncedSyncToSN();
+    // Save raw text back to SN
+    syncToSN();
   }
 
-  // Re-render on content or cursor changes (so math zones toggle raw/rendered seamlessly)
-  cm.on('changes', renderDecorations);
-  cm.on('cursorActivity', renderDecorations);
+  // Debounce saving
+  function debounce(fn,ms){let t;return(...a)=>{clearTimeout(t);t=setTimeout(()=>fn(...a),ms);};}
+  const syncToSN=debounce(()=>{ 
+    window.parent.postMessage({action:"set-text",text:cm.getValue()},"*");
+  },200);
 
-  // --- Standard Notes integration ---
-  const debouncedSyncToSN = debounce(() => {
-    window.parent.postMessage({ action: 'set-text', text: cm.getValue() }, '*');
-  }, 120);
+  cm.on("changes",renderDecorations);
+  cm.on("cursorActivity",renderDecorations);
 
-  window.addEventListener('message', (e) => {
-    if (e.data && e.data.action === 'set-text') {
-      const incoming = e.data.text || '';
-      if (incoming !== cm.getValue()) {
-        const cur = cm.getCursor();
-        cm.setValue(incoming);
-        cm.setCursor(cur);
+  // Receive content from SN
+  window.addEventListener("message",(e)=>{
+    if(e.data.action==="set-text"){
+      if(e.data.text!==cm.getValue()){
+        cm.setValue(e.data.text||"");
       }
       renderDecorations();
     }
   });
 
-  // util: debounce
-  function debounce(fn, ms){ let t; return (...a)=>{ clearTimeout(t); t=setTimeout(()=>fn(...a), ms); }; }
-
-  // Initial paint
   renderDecorations();
 })();
 </script>
