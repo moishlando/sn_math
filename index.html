@@ -1,95 +1,190 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <title>Monospace Math Editor</title>
-  <link rel="stylesheet" href="https://unpkg.com/mathlive/dist/mathlive.core.css">
-  <script src="https://unpkg.com/mathlive/dist/mathlive.min.js"></script>
+  <meta charset="utf-8" />
+  <title>SN Monospace Math (Inline)</title>
+
+  <!-- KaTeX -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.10/dist/katex.min.css">
+  <script src="https://cdn.jsdelivr.net/npm/katex@0.16.10/dist/katex.min.js"></script>
+
   <style>
-    body {
-      margin: 0;
-      background: #1e1e1e;
-      color: #f5f5f5;
-      font-family: monospace;
-      height: 100vh;
-      display: flex;
-      flex-direction: column;
-    }
-    #editor {
-      flex: 1;
-      padding: 15px;
-      outline: none;
-      white-space: pre-wrap;
-      word-wrap: break-word;
-    }
-    strong {
-      font-weight: bold;
-      color: #ffd700;
-    }
+    html, body { height: 100%; margin: 0; background:#1e1e1e; color:#f5f5f5; }
+    .cm-editor { height: 100vh; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace; }
+    .cm-content { caret-color: #fff; }
+    .katex-widget { background:#2b2b2b; padding:2px 4px; border-radius:4px; cursor:pointer; display:inline-block; }
+    .bold-mark { font-weight:700; color:#ffd966; } /* inner bold highlight */
+    /* optional: mute the literal ** markers visually (still present in text model) */
+    .asterisk-mute { opacity: 0.4; }
   </style>
 </head>
 <body>
-  <div id="editor" contenteditable="true"></div>
 
-  <script>
-    const editor = document.getElementById('editor');
+<div id="mount"></div>
 
-    // Convert **bold** into <strong>
-    function renderBold(text) {
-      return text.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
+<script type="module">
+  // --- Imports (ESM via CDN) ---
+  import {EditorState}        from "https://esm.sh/@codemirror/state@6";
+  import {EditorView, keymap, Decoration, WidgetType, ViewPlugin, ViewUpdate} 
+                              from "https://esm.sh/@codemirror/view@6";
+  import {defaultKeymap, history, historyKeymap} 
+                              from "https://esm.sh/@codemirror/commands@6";
+  import {indentWithTab}      from "https://esm.sh/@codemirror/commands@6";
+
+  // ---------- Math Decoration (KaTeX) ----------
+  class KaTeXWidget extends WidgetType {
+    constructor(tex, display) {
+      super(); this.tex = tex; this.display = display;
     }
-
-    // Replace math inline with MathLive fields
-    function renderMath() {
-      const raw = editor.innerText;
-      let html = renderBold(raw);
-
-      // Replace $...$ or $$...$$
-      html = html.replace(/\$\$(.+?)\$\$|\$(.+?)\$/g, (match, block, inline) => {
-        const expr = block || inline;
-        return `<span class="mathfield" data-content="${expr}"></span>`;
-      });
-
-      editor.innerHTML = html;
-
-      // Upgrade math spans to interactive MathLive fields
-      document.querySelectorAll('.mathfield').forEach(el => {
-        const mf = MathLive.makeMathField(el, {
-          defaultMode: 'math',
-          virtualKeyboardMode: 'off',
-          smartMode: false,
-          onContentDidChange: (mf) => syncBack(),
-        });
-        mf.setValue(el.dataset.content);
-      });
-
-      syncBack();
+    eq(other) { return other.tex === this.tex && other.display === this.display; }
+    toDOM() {
+      const span = document.createElement("span");
+      span.className = "katex-widget";
+      try {
+        span.innerHTML = katex.renderToString(this.tex, {displayMode: this.display, throwOnError:false});
+      } catch { span.textContent = this.tex; }
+      // clicking the widget should place the caret inside the underlying $...$
+      span.addEventListener("mousedown", (e) => { e.preventDefault(); });
+      return span;
     }
+    ignoreEvent() { return false; }
+  }
 
-    // Send text back to Standard Notes
-    function syncBack() {
-      let text = editor.innerText;
+  // Scan doc for $$...$$ (can be multiline) and $...$ (single line), build decorations.
+  function mathDecorations(view) {
+    const decos = [];
+    const sel = view.state.selection.main;
+    const doc = view.state.doc;
+    const text = doc.toString();
 
-      // Convert MathLive fields back to $...$
-      document.querySelectorAll('.mathfield').forEach(el => {
-        const latex = el.querySelector('math-field')?.getValue() || el.dataset.content;
-        text = text.replace(el.innerText, `$${latex}$`);
-      });
+    // helper to check if selection intersects [from, to)
+    const intersects = (from, to) => !(sel.to <= from || sel.from >= to);
 
-      window.parent.postMessage({ action: "set-text", text }, "*");
-    }
-
-    // Standard Notes → load note content
-    window.addEventListener("message", (event) => {
-      if (event.data.action === "set-text") {
-        editor.innerText = event.data.text || "";
-        renderMath();
+    // 1) block math $$...$$ (allow newlines)
+    {
+      const reBlock = /\$\$([\s\S]*?)\$\$/g;  // greedy across lines
+      let m;
+      while ((m = reBlock.exec(text)) !== null) {
+        const from = m.index, to = m.index + m[0].length;
+        if (intersects(from, to)) continue; // skip rendering when caret inside → keep raw for editing
+        const tex = m[1];
+        const deco = Decoration.widget({
+          widget: new KaTeXWidget(tex, true),
+          side: 0
+        }).range(from);
+        // hide the raw text by covering it with a widget and adding a zero-width placeholder after
+        decos.push(deco, Decoration.replace({}).range(from, to));
       }
-    });
+    }
 
-    // Initial demo
-    editor.innerText = "Notes here. Bold with **stars**. Inline math: $x^2+y^2=z^2$ or $$E=mc^2$$.";
-    renderMath();
-  </script>
+    // 2) inline math $...$ (no newlines inside)
+    {
+      const reInline = /\$(?:\\\$|[^\n$])+\$/g;
+      let m;
+      while ((m = reInline.exec(text)) !== null) {
+        const raw = m[0];
+        // ignore $$...$$ which block regex already handled (starts/ends with $$)
+        if (raw.startsWith("$$") || raw.endsWith("$$")) continue;
+        const from = m.index, to = m.index + raw.length;
+        if (intersects(from, to)) continue;
+        const tex = raw.slice(1, -1);
+        const deco = Decoration.widget({
+          widget: new KaTeXWidget(tex, false),
+          side: 0
+        }).range(from);
+        decos.push(deco, Decoration.replace({}).range(from, to));
+      }
+    }
+
+    // 3) **bold** inner highlight (optional)
+    {
+      const reBold = /\*\*([^\n*][\s\S]*?[^\n*])\*\*/g;
+      let m;
+      while ((m = reBold.exec(text)) !== null) {
+        const fullFrom = m.index, fullTo = m.index + m[0].length;
+        if (intersects(fullFrom, fullTo)) continue; // editable raw when caret inside
+        const innerFrom = fullFrom + 2, innerTo = fullTo - 2;
+        decos.push(Decoration.mark({class: "bold-mark"}).range(innerFrom, innerTo));
+        // (Optional) visually mute the literal ** markers:
+        // decos.push(Decoration.mark({class:"asterisk-mute"}).range(fullFrom, innerFrom));
+        // decos.push(Decoration.mark({class:"asterisk-mute"}).range(innerTo, fullTo));
+      }
+    }
+
+    return Decoration.set(decos, true);
+  }
+
+  const mathPlugin = ViewPlugin.fromClass(class {
+    constructor(view) { this.decos = mathDecorations(view); }
+    update(update) {
+      if (update.docChanged || update.selectionSet) {
+        this.decos = mathDecorations(update.view);
+      }
+    }
+  }, { decorations: v => v.decos });
+
+  // ---------- SN sync ----------
+  function postToSN(view) {
+    const text = view.state.doc.toString();
+    window.parent.postMessage({ action: "set-text", text }, "*");
+  }
+
+  // Debounce helper (limits SN messages)
+  function debounce(fn, ms) {
+    let t; return (...args) => { clearTimeout(t); t = setTimeout(() => fn(...args), ms); };
+  }
+  const debouncedPost = debounce(postToSN, 120);
+
+  // Notify SN on content changes
+  const snSyncPlugin = ViewPlugin.fromClass(class{
+    update(u) { if (u.docChanged) debouncedPost(u.view); }
+  });
+
+  // ---------- Editor Init ----------
+  const startText = "Monospace notes.\nBold with **stars**.\nInline $x^2+y^2=z^2$ and block:\n$$E=mc^2$$\nClick rendered math to place the caret and edit; it will auto-render when the $...$ is balanced.";
+  const state = EditorState.create({
+    doc: startText,
+    extensions: [
+      history(),
+      keymap.of([...defaultKeymap, ...historyKeymap, indentWithTab]),
+      EditorView.lineWrapping,
+      mathPlugin,
+      snSyncPlugin
+    ]
+  });
+
+  const view = new EditorView({ state, parent: document.getElementById("mount") });
+
+  // Receive content from Standard Notes
+  window.addEventListener("message", (e) => {
+    if (e.data?.action === "set-text") {
+      const text = e.data.text ?? "";
+      if (text === view.state.doc.toString()) return;
+      view.dispatch({
+        changes: { from: 0, to: view.state.doc.length, insert: text }
+      });
+    }
+  });
+
+  // Send initial content to SN once (so the note shows something if new)
+  postToSN(view);
+
+  // Clicking a KaTeX widget should move caret inside the underlying math
+  document.addEventListener("mousedown", (ev) => {
+    const w = ev.target.closest(".katex-widget");
+    if (!w) return;
+    // Find the position of the widget by DOM -> pos mapping
+    const pos = view.posAtDOM(w, 0);
+    // Place caret just after the opening $, which is pos in the model
+    // We search backward to the next '$' before this pos (safe fallback: pos)
+    const docStr = view.state.doc.toString();
+    let from = docStr.lastIndexOf("$", pos);
+    if (from >= 0 && docStr[from-1] === "$") from--; // handle $$
+    if (from < 0) from = pos;
+    view.dispatch({ selection: { anchor: from + 1 } }); // inside the dollars
+    ev.preventDefault();
+  });
+</script>
+
 </body>
 </html>
