@@ -110,15 +110,21 @@
         mathMarks.push(mk);
       }
 
-      // bold **...**
-      const reBold=/\*\*([^\n*][\s\S]*?[^\n*])\*\*/g;
-      while((m=reBold.exec(text))){
-        const from=m.index, to=from+m[0].length;
-        if(selectionIntersects(from,to)) continue;
-        const innerFrom=from+2, innerTo=to-2;
-        boldMarks.push(cm.markText(posFromIndex(innerFrom),posFromIndex(innerTo),{className:"bold-inner"}));
-      }
-    }
+// TeX bold: \textbf{...}
+const reBold=/\\textbf\{([^}]*)\}/g;  // matches \textbf{something}
+while((m=reBold.exec(text))){
+  const from=m.index, to=from+m[0].length;
+  if(selectionIntersects(from,to)) continue;
+  // inner content is inside { }
+  const innerFrom=from + "\\textbf{".length;
+  const innerTo=to - 1; // before the closing }
+  boldMarks.push(cm.markText(
+    posFromIndex(innerFrom),
+    posFromIndex(innerTo),
+    {className:"bold-inner"}
+  ));
+}
+
 
     // --- SN Component Relay ---
     const debounce=(fn,ms)=>{let t;return(...a)=>{clearTimeout(t);t=setTimeout(()=>fn(...a),ms);};};
