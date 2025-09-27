@@ -1,11 +1,11 @@
 {
   "identifier": "io.moishlando.sn_math",
-  "name": "Monospace Math Editor",
+  "name": "Math Editor",
+  "description": "Monospace editor with inline LaTeX math rendering",
   "content_type": "SN|Component",
   "area": "editor-editor",
   "version": "1.0.0",
-  "description": "Monospace editor with inline KaTeX ($...$, $$...$$) and **bold**.",
-  "url": "https://moishlando.github.io/sn_math/index.html",
-  "download_url": "https://github.com/moishlando/sn_math/archive/refs/tags/v1.0.0.zip",
-  "latest_url": "https://moishlando.github.io/sn_math/ext.json"
+  "url": "https://moishlando.github.io/sn-math-editor/index.html",
+  "download_url": "https://moishlando.github.io/sn-math-editor/latest.zip",
+  "latest_url": "https://moishlando.github.io/sn-math-editor/package.json"
 }
