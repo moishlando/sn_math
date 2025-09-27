@@ -22,39 +22,19 @@
       color: var(--sn-stylekit-foreground-color, black);
     }
 
-    .CodeMirror {
-      height: calc(100vh - 40px);
-      font-family: var(--sn-stylekit-editor-font-family, monospace);
-      font-size: var(--sn-stylekit-font-size-editor, 14px);
-      color: var(--sn-stylekit-foreground-color, black);
-    }
+.CodeMirror {
+  height: 100vh;
+  font-family: var(--sn-stylekit-editor-font-family, monospace), monospace !important;
+  font-size: var(--sn-stylekit-font-size-editor, 14px);
+  color: var(--sn-stylekit-foreground-color, black);
+}
 
-    .toolbar {
-      height: 40px;
-      background: var(--sn-stylekit-contrast-background-color, #ddd);
-      border-bottom: 1px solid var(--sn-stylekit-border-color, #ccc);
-      display: flex;
-      align-items: center;
-      padding: 0 8px;
-    }
 
-    .toolbar button {
-      font-size: 13px;
-      padding: 4px 8px;
-      border: 1px solid var(--sn-stylekit-border-color, #aaa);
-      border-radius: 4px;
-      background: var(--sn-stylekit-background-color, white);
-      color: var(--sn-stylekit-foreground-color, black);
-      cursor: pointer;
-    }
-
-    .katex-chip {
-      padding: 0 2px;
-      background: none;
-      border-radius: 0;
-      font-size: var(--sn-stylekit-font-size-editor, 14px);
-      color: var(--sn-stylekit-foreground-color, black);
-    }
+.katex-chip {
+  font-family: var(--sn-stylekit-editor-font-family, monospace), monospace !important;
+  font-size: var(--sn-stylekit-font-size-editor, 14px);
+  color: var(--sn-stylekit-foreground-color, black);
+}
 
     .bold-inner {
       font-weight: bold;
@@ -62,9 +42,7 @@
   </style>
 </head>
 <body>
-  <div class="toolbar">
-    <button id="toggle-math">Toggle Math Rendering</button>
-  </div>
+
   <div id="host"></div>
 
   <!-- CodeMirror JS -->
@@ -188,11 +166,15 @@
     cm.on("changes",()=>{renderDecorations();saveNow();});
     cm.on("cursorActivity",renderDecorations);
 
-    // Toggle button
-    document.getElementById("toggle-math").addEventListener("click",()=>{
-      renderMath=!renderMath;
-      renderDecorations();
-    });
+// Keyboard shortcut: Ctrl+M / Cmd+M to toggle math rendering
+cm.on("keydown", (cmInstance, event) => {
+  if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "m") {
+    renderMath = !renderMath;
+    renderDecorations();
+    event.preventDefault();
+  }
+});
+
   })();
   </script>
 </body>
