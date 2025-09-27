@@ -10,7 +10,7 @@
   <!-- KaTeX CSS -->
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
 
-  <!-- SN theme variables (still used for colors only) -->
+  <!-- SN theme variables (used for colors) -->
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/sn-extension-api/dist/sn.min.css">
 
   <style>
@@ -22,8 +22,30 @@
       color: var(--sn-stylekit-foreground-color, black);
     }
 
+    .toolbar {
+      height: 32px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 0 8px;
+      background: var(--sn-stylekit-contrast-background-color, #ddd);
+      color: var(--sn-stylekit-foreground-color, black);
+      font-family: monospace;
+      font-size: 14px;
+    }
+
+    .toolbar button {
+      background: none;
+      border: none;
+      cursor: pointer;
+      font-size: 14px;
+      line-height: 1;
+      padding: 0;
+      color: inherit;
+    }
+
     .CodeMirror {
-      height: 100vh;
+      height: calc(100vh - 32px);
       font-family: monospace !important;
       font-size: 10px !important;
       color: var(--sn-stylekit-foreground-color, black);
@@ -48,6 +70,13 @@
 </head>
 <body>
 
+  <!-- Minimal toolbar -->
+  <div class="toolbar">
+    <button id="decrease-font">a</button>
+    <button id="increase-font">A</button>
+    <button id="toggle-math">ƒ</button>
+  </div>
+
   <div id="host"></div>
 
   <!-- CodeMirror JS -->
@@ -70,8 +99,8 @@
     });
 
     let mathMarks = [], boldMarks = [];
-    let renderMath = true; // toggle flag
-    let currentFontSize = 10; // starting size
+    let renderMath = true;
+    let currentFontSize = 10;
 
     function applyFontSize() {
       cm.getWrapperElement().style.fontSize = currentFontSize + "px";
@@ -181,28 +210,20 @@
     cm.on("changes",()=>{renderDecorations();saveNow();});
     cm.on("cursorActivity",renderDecorations);
 
-    // --- Keyboard shortcuts ---
-    cm.on("keydown", (cmInstance, event) => {
-      // Ctrl+M toggle math rendering
-      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "m") {
-        renderMath = !renderMath;
-        renderDecorations();
-        event.preventDefault();
-      }
+    // --- Toolbar buttons ---
+    document.getElementById("decrease-font").addEventListener("click", () => {
+      currentFontSize = Math.max(6, currentFontSize - 1);
+      applyFontSize();
+    });
 
-      // Ctrl+, decrease font
-      if ((event.ctrlKey || event.metaKey) && event.key === ",") {
-        currentFontSize = Math.max(6, currentFontSize - 1);
-        applyFontSize();
-        event.preventDefault();
-      }
+    document.getElementById("increase-font").addEventListener("click", () => {
+      currentFontSize = Math.min(40, currentFontSize + 1);
+      applyFontSize();
+    });
 
-      // Ctrl+. increase font
-      if ((event.ctrlKey || event.metaKey) && event.key === ".") {
-        currentFontSize = Math.min(40, currentFontSize + 1);
-        applyFontSize();
-        event.preventDefault();
-      }
+    document.getElementById("toggle-math").addEventListener("click", () => {
+      renderMath = !renderMath;
+      renderDecorations();
     });
 
     // Apply initial font size
