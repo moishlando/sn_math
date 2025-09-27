@@ -1,134 +1,146 @@
-<!doctype html>
-<html lang="en">
+<!DOCTYPE html>
+<html>
 <head>
-  <meta charset="utf-8" />
-  <title>Monospace Math Editor</title>
+  <meta charset="utf-8">
+  <title>Math Editor</title>
 
-  <!-- CodeMirror 5 -->
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/codemirror@5/lib/codemirror.css">
-  <script src="https://cdn.jsdelivr.net/npm/codemirror@5/lib/codemirror.js"></script>
+  <!-- CodeMirror CSS -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.9/codemirror.min.css" />
 
-  <!-- KaTeX -->
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.10/dist/katex.min.css">
-  <script src="https://cdn.jsdelivr.net/npm/katex@0.16.10/dist/katex.min.js"></script>
+  <!-- KaTeX CSS -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+
+  <!-- SN theme variables -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/sn-extension-api/dist/sn.min.css">
 
   <style>
-    html, body { height: 100%; margin: 0; background: #fff; color: #111; }
+    body {
+      margin: 0;
+      font-family: var(--sn-stylekit-editor-font-family, monospace);
+      font-size: var(--sn-stylekit-font-size-editor, 14px);
+      background-color: var(--sn-stylekit-background-color, white);
+      color: var(--sn-stylekit-foreground-color, black);
+    }
     .CodeMirror {
       height: 100vh;
-      background: #fff !important;
-      color: #111 !important;
-      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
-      font-size: 14px;
-      line-height: 1.5;
+      font-family: monospace;
     }
-    .CodeMirror-cursor { border-left: 2px solid #000 !important; }
-    .CodeMirror-focused .CodeMirror-selected { background: rgba(37,99,235,0.15) !important; }
-    .CodeMirror-selected { background: rgba(0,0,0,0.08) !important; }
-
     .katex-chip {
-      display: inline-block;
-      background: #f3f4f6;
-      border: 1px solid #e5e7eb;
-      border-radius: 4px;
       padding: 2px 4px;
-      cursor: pointer;
+      background: var(--sn-stylekit-neutral-color, #eee);
+      border-radius: 4px;
     }
-    .bold-inner { font-weight: 700; color: #111; }
+    .bold-inner {
+      font-weight: bold;
+    }
   </style>
 </head>
 <body>
   <div id="host"></div>
 
-<script>
-(function(){
-  const host = document.getElementById('host');
-  const cm = CodeMirror(host, {
-    value: "Type **bold** or math like $x^2$ or $$E=mc^2$$",
-    lineNumbers: false,
-    lineWrapping: true,
-    viewportMargin: Infinity
-  });
+  <!-- CodeMirror JS -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.9/codemirror.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.9/mode/markdown/markdown.min.js"></script>
 
-  let mathMarks = [], boldMarks = [];
+  <!-- KaTeX JS -->
+  <script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
 
-  function clearMarks(arr) { for (const m of arr) m.clear(); arr.length = 0; }
-  function posFromIndex(idx) { return cm.posFromIndex(idx); }
-  function indexFromPos(pos) { return cm.indexFromPos(pos); }
-  function selectionIntersects(fromIdx,toIdx){
-    for (const r of cm.listSelections()) {
-      const a=indexFromPos(r.anchor), b=indexFromPos(r.head);
-      if (!(Math.max(a,b)<=fromIdx || Math.min(a,b)>=toIdx)) return true;
-    } return false;
-  }
+  <!-- Standard Notes Component Relay -->
+  <script src="https://cdn.jsdelivr.net/npm/@standardnotes/component-relay/dist/dist.js"></script>
 
-  function renderDecorations() {
-    const text = cm.getValue();
-    clearMarks(mathMarks); clearMarks(boldMarks);
+  <script>
+  (function(){
+    const host = document.getElementById('host');
+    const cm = CodeMirror(host, {
+      value: "",
+      lineWrapping: true,
+      viewportMargin: Infinity
+    });
 
-    // Block math $$...$$
-    const reBlock = /\$\$([\s\S]*?)\$\$/g; let m;
-    while ((m = reBlock.exec(text))) {
-      const from=m.index, to=from+m[0].length;
-      if (selectionIntersects(from,to)) continue;
-      const expr=m[1];
-      const span=document.createElement("span"); span.className="katex-chip";
-      try{ span.innerHTML=katex.renderToString(expr,{displayMode:true,throwOnError:false}); }
-      catch{ span.textContent=expr; }
-      const mk=cm.markText(posFromIndex(from),posFromIndex(to),{replacedWith:span,atomic:true});
-      span.addEventListener("mousedown",e=>{e.preventDefault();mk.clear();cm.focus();cm.setCursor(posFromIndex(from+2));});
-      mathMarks.push(mk);
+    let mathMarks = [], boldMarks = [];
+    function clearMarks(arr){ for(const m of arr) m.clear(); arr.length=0; }
+    function posFromIndex(i){ return cm.posFromIndex(i); }
+    function indexFromPos(p){ return cm.indexFromPos(p); }
+    function selectionIntersects(from,to){
+      for(const r of cm.listSelections()){
+        const a=indexFromPos(r.anchor), b=indexFromPos(r.head);
+        if(!(Math.max(a,b)<=from || Math.min(a,b)>=to)) return true;
+      } return false;
     }
 
-    // Inline math $...$
-    const reInline=/\$(?:\\\$|[^\n$])+\$/g;
-    while ((m = reInline.exec(text))) {
-      const raw=m[0]; if(raw.startsWith("$$")||raw.endsWith("$$")) continue;
-      const from=m.index,to=from+raw.length;
-      if(selectionIntersects(from,to)) continue;
-      const expr=raw.slice(1,-1);
-      const span=document.createElement("span"); span.className="katex-chip";
-      try{ span.innerHTML=katex.renderToString(expr,{throwOnError:false}); }
-      catch{ span.textContent=expr; }
-      const mk=cm.markText(posFromIndex(from),posFromIndex(to),{replacedWith:span,atomic:true});
-      span.addEventListener("mousedown",e=>{e.preventDefault();mk.clear();cm.focus();cm.setCursor(posFromIndex(from+1));});
-      mathMarks.push(mk);
-    }
+    function renderDecorations(){
+      const text = cm.getValue();
+      clearMarks(mathMarks); clearMarks(boldMarks);
 
-    // Bold **...**
-    const reBold=/\*\*([^\n*][\s\S]*?[^\n*])\*\*/g;
-    while((m=reBold.exec(text))){
-      const from=m.index,to=from+m[0].length;
-      if(selectionIntersects(from,to)) continue;
-      const innerFrom=from+2,innerTo=to-2;
-      boldMarks.push(cm.markText(posFromIndex(innerFrom),posFromIndex(innerTo),{className:"bold-inner"}));
-    }
-
-    // Save raw text back to SN
-    syncToSN();
-  }
-
-  // Debounce saving
-  function debounce(fn,ms){let t;return(...a)=>{clearTimeout(t);t=setTimeout(()=>fn(...a),ms);};}
-  const syncToSN=debounce(()=>{ 
-    window.parent.postMessage({action:"set-text",text:cm.getValue()},"*");
-  },200);
-
-  cm.on("changes",renderDecorations);
-  cm.on("cursorActivity",renderDecorations);
-
-  // Receive content from SN
-  window.addEventListener("message",(e)=>{
-    if(e.data.action==="set-text"){
-      if(e.data.text!==cm.getValue()){
-        cm.setValue(e.data.text||"");
+      // block math $$...$$
+      const reBlock=/\$\$([\s\S]*?)\$\$/g; let m;
+      while((m=reBlock.exec(text))){
+        const from=m.index, to=from+m[0].length;
+        if(selectionIntersects(from,to)) continue;
+        const span=document.createElement("span"); span.className="katex-chip";
+        try { span.innerHTML=katex.renderToString(m[1],{displayMode:true,throwOnError:false}); }
+        catch{ span.textContent=m[1]; }
+        const mk=cm.markText(posFromIndex(from),posFromIndex(to),{replacedWith:span,atomic:true});
+        span.addEventListener("mousedown",e=>{e.preventDefault();mk.clear();cm.focus();cm.setCursor(posFromIndex(from+2));});
+        mathMarks.push(mk);
       }
-      renderDecorations();
-    }
-  });
 
-  renderDecorations();
-})();
-</script>
+      // inline math $...$
+      const reInline=/\$(?:\\\$|[^\n$])+\$/g;
+      while((m=reInline.exec(text))){
+        const raw=m[0]; if(raw.startsWith("$$")||raw.endsWith("$$")) continue;
+        const from=m.index, to=from+raw.length;
+        if(selectionIntersects(from,to)) continue;
+        const expr=raw.slice(1,-1);
+        const span=document.createElement("span"); span.className="katex-chip";
+        try { span.innerHTML=katex.renderToString(expr,{throwOnError:false}); }
+        catch{ span.textContent=expr; }
+        const mk=cm.markText(posFromIndex(from),posFromIndex(to),{replacedWith:span,atomic:true});
+        span.addEventListener("mousedown",e=>{e.preventDefault();mk.clear();cm.focus();cm.setCursor(posFromIndex(from+1));});
+        mathMarks.push(mk);
+      }
+
+      // bold **...**
+      const reBold=/\*\*([^\n*][\s\S]*?[^\n*])\*\*/g;
+      while((m=reBold.exec(text))){
+        const from=m.index, to=from+m[0].length;
+        if(selectionIntersects(from,to)) continue;
+        const innerFrom=from+2, innerTo=to-2;
+        boldMarks.push(cm.markText(posFromIndex(innerFrom),posFromIndex(innerTo),{className:"bold-inner"}));
+      }
+    }
+
+    // --- SN Component Relay ---
+    const debounce=(fn,ms)=>{let t;return(...a)=>{clearTimeout(t);t=setTimeout(()=>fn(...a),ms);};};
+    let currentNote;
+
+    const relay=new window.ComponentRelay({
+      targetWindow: window,
+      options:{coallesedSaving:true, coallesedSavingDelay:350}
+    });
+
+    relay.streamContextItem((note)=>{
+      currentNote=note;
+      if(note.isMetadataUpdate) return;
+      const incoming=(note.content && note.content.text)||"";
+      if(incoming!==cm.getValue()) cm.setValue(incoming);
+      const locked=relay.getItemAppDataValue(note,'locked');
+      cm.setOption('readOnly',locked?'nocursor':false);
+      renderDecorations();
+    });
+
+    const saveNow=debounce(()=>{
+      if(!currentNote) return;
+      const raw=cm.getValue();
+      relay.saveItemWithPresave(currentNote,()=>{
+        currentNote.content.text=raw;
+        currentNote.content.preview_plain=raw.slice(0,100);
+      });
+    },300);
+
+    cm.on("changes",()=>{renderDecorations();saveNow();});
+    cm.on("cursorActivity",renderDecorations);
+  })();
+  </script>
 </body>
 </html>
