@@ -17,7 +17,7 @@
     body {
       margin: 0;
       font-family: monospace !important;
-      font-size: 10px !important;
+      font-size: 14px !important;
       background-color: var(--sn-stylekit-background-color, white);
       color: var(--sn-stylekit-foreground-color, black);
     }
@@ -47,13 +47,13 @@
     .CodeMirror {
       height: calc(100vh - 32px);
       font-family: monospace !important;
-      font-size: 10px !important;
+      font-size: 14px !important;
       color: var(--sn-stylekit-foreground-color, black);
     }
 
     .katex-chip {
       font-family: monospace !important;
-      font-size: 10px !important;
+      font-size: 14px !important;
       color: var(--sn-stylekit-foreground-color, black);
       display: inline-block;
       vertical-align: middle;
@@ -100,7 +100,7 @@
 
     let mathMarks = [], boldMarks = [];
     let renderMath = true;
-    let currentFontSize = 10;
+    let currentFontSize = 14; // more normal default
 
     function applyFontSize() {
       cm.getWrapperElement().style.fontSize = currentFontSize + "px";
@@ -212,13 +212,15 @@
 
     // --- Toolbar buttons ---
     document.getElementById("decrease-font").addEventListener("click", () => {
-      currentFontSize = Math.max(6, currentFontSize - 1);
+      currentFontSize = Math.max(8, currentFontSize - 1);
       applyFontSize();
+      renderDecorations();
     });
 
     document.getElementById("increase-font").addEventListener("click", () => {
-      currentFontSize = Math.min(40, currentFontSize + 1);
+      currentFontSize = Math.min(24, currentFontSize + 1);
       applyFontSize();
+      renderDecorations();
     });
 
     document.getElementById("toggle-math").addEventListener("click", () => {
