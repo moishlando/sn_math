@@ -13,27 +13,37 @@
   <!-- SN theme variables -->
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/sn-extension-api/dist/sn.min.css">
 
-  <style>
-    body {
-      margin: 0;
-      font-family: var(--sn-stylekit-editor-font-family, monospace);
-      font-size: var(--sn-stylekit-font-size-editor, 14px);
-      background-color: var(--sn-stylekit-background-color, white);
-      color: var(--sn-stylekit-foreground-color, black);
-    }
-    .CodeMirror {
-      height: 100vh;
-      font-family: monospace;
-    }
-    .katex-chip {
-      padding: 2px 4px;
-      background: var(--sn-stylekit-neutral-color, #eee);
-      border-radius: 4px;
-    }
-    .bold-inner {
-      font-weight: bold;
-    }
-  </style>
+<style>
+  body {
+    margin: 0;
+    font-family: var(--sn-stylekit-editor-font-family, monospace);
+    font-size: var(--sn-stylekit-font-size-editor, 14px);
+    background-color: var(--sn-stylekit-background-color, white);
+    color: var(--sn-stylekit-foreground-color, black);
+  }
+
+  .CodeMirror {
+    height: 100vh;
+    font-family: var(--sn-stylekit-editor-font-family, monospace);
+    font-size: var(--sn-stylekit-font-size-editor, 14px); /* regular text matches SN size */
+    color: var(--sn-stylekit-foreground-color, black);    /* regular text matches SN color */
+  }
+
+  /* KaTeX rendering — also match SN text size and color */
+  .katex-chip {
+    padding: 0 2px;
+    background: none;
+    border-radius: 0;
+    font-size: var(--sn-stylekit-font-size-editor, 14px);
+    color: var(--sn-stylekit-foreground-color, black);
+  }
+
+  /* Bold decoration */
+  .bold-inner {
+    font-weight: bold;
+  }
+</style>
+
 </head>
 <body>
   <div id="host"></div>
