@@ -13,44 +13,62 @@
   <!-- SN theme variables -->
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/sn-extension-api/dist/sn.min.css">
 
-<style>
-  body {
-    margin: 0;
-    font-family: var(--sn-stylekit-editor-font-family, monospace);
-    font-size: var(--sn-stylekit-font-size-editor, 14px);
-    background-color: var(--sn-stylekit-background-color, white);
-    color: var(--sn-stylekit-foreground-color, black);
-  }
+  <style>
+    body {
+      margin: 0;
+      font-family: var(--sn-stylekit-editor-font-family, monospace);
+      font-size: var(--sn-stylekit-font-size-editor, 14px);
+      background-color: var(--sn-stylekit-background-color, white);
+      color: var(--sn-stylekit-foreground-color, black);
+    }
 
-  .CodeMirror {
-    height: 100vh;
-    font-family: var(--sn-stylekit-editor-font-family, monospace);
-    font-size: var(--sn-stylekit-font-size-editor, 14px); /* regular text matches SN size */
-    color: var(--sn-stylekit-foreground-color, black);    /* regular text matches SN color */
-  }
+    .CodeMirror {
+      height: calc(100vh - 40px);
+      font-family: var(--sn-stylekit-editor-font-family, monospace);
+      font-size: var(--sn-stylekit-font-size-editor, 14px);
+      color: var(--sn-stylekit-foreground-color, black);
+    }
 
-  /* KaTeX rendering — also match SN text size and color */
-  .katex-chip {
-    padding: 0 2px;
-    background: none;
-    border-radius: 0;
-    font-size: var(--sn-stylekit-font-size-editor, 14px);
-    color: var(--sn-stylekit-foreground-color, black);
-  }
+    .toolbar {
+      height: 40px;
+      background: var(--sn-stylekit-contrast-background-color, #ddd);
+      border-bottom: 1px solid var(--sn-stylekit-border-color, #ccc);
+      display: flex;
+      align-items: center;
+      padding: 0 8px;
+    }
 
-  /* Bold decoration */
-  .bold-inner {
-    font-weight: bold;
-  }
-</style>
+    .toolbar button {
+      font-size: 13px;
+      padding: 4px 8px;
+      border: 1px solid var(--sn-stylekit-border-color, #aaa);
+      border-radius: 4px;
+      background: var(--sn-stylekit-background-color, white);
+      color: var(--sn-stylekit-foreground-color, black);
+      cursor: pointer;
+    }
 
+    .katex-chip {
+      padding: 0 2px;
+      background: none;
+      border-radius: 0;
+      font-size: var(--sn-stylekit-font-size-editor, 14px);
+      color: var(--sn-stylekit-foreground-color, black);
+    }
+
+    .bold-inner {
+      font-weight: bold;
+    }
+  </style>
 </head>
 <body>
+  <div class="toolbar">
+    <button id="toggle-math">Toggle Math Rendering</button>
+  </div>
   <div id="host"></div>
 
   <!-- CodeMirror JS -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.9/codemirror.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.9/mode/markdown/markdown.min.js"></script>
 
   <!-- KaTeX JS -->
   <script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
@@ -64,10 +82,13 @@
     const cm = CodeMirror(host, {
       value: "",
       lineWrapping: true,
-      viewportMargin: Infinity
+      viewportMargin: Infinity,
+      mode: null
     });
 
     let mathMarks = [], boldMarks = [];
+    let renderMath = true; // toggle flag
+
     function clearMarks(arr){ for(const m of arr) m.clear(); arr.length=0; }
     function posFromIndex(i){ return cm.posFromIndex(i); }
     function indexFromPos(p){ return cm.indexFromPos(p); }
@@ -82,49 +103,59 @@
       const text = cm.getValue();
       clearMarks(mathMarks); clearMarks(boldMarks);
 
-      // block math $$...$$
-      const reBlock=/\$\$([\s\S]*?)\$\$/g; let m;
-      while((m=reBlock.exec(text))){
+      // only render math if toggle is on
+      if(renderMath){
+        // block math $$...$$
+        const reBlock=/\$\$([\s\S]*?)\$\$/g; let m;
+        while((m=reBlock.exec(text))){
+          const from=m.index, to=from+m[0].length;
+          if(selectionIntersects(from,to)) continue;
+          const span=document.createElement("span"); span.className="katex-chip";
+          try { span.innerHTML=katex.renderToString(m[1],{displayMode:true,throwOnError:false}); }
+          catch{ span.textContent=m[1]; }
+          const mk=cm.markText(posFromIndex(from),posFromIndex(to),{replacedWith:span,atomic:true});
+          span.addEventListener("mousedown",e=>{e.preventDefault();mk.clear();cm.focus();cm.setCursor(posFromIndex(from+2));});
+          mathMarks.push(mk);
+        }
+
+        // inline math $...$
+        const reInline=/\$(?:\\\$|[^\n$])+\$/g;
+        while((m=reInline.exec(text))){
+          const raw=m[0]; if(raw.startsWith("$$")||raw.endsWith("$$")) continue;
+          const from=m.index, to=from+raw.length;
+          if(selectionIntersects(from,to)) continue;
+          const expr=raw.slice(1,-1);
+          const span=document.createElement("span"); span.className="katex-chip";
+          try { span.innerHTML=katex.renderToString(expr,{throwOnError:false}); }
+          catch{ span.textContent=expr; }
+          const mk=cm.markText(posFromIndex(from),posFromIndex(to),{replacedWith:span,atomic:true});
+          span.addEventListener("mousedown",e=>{e.preventDefault();mk.clear();cm.focus();cm.setCursor(posFromIndex(from+1));});
+          mathMarks.push(mk);
+        }
+      }
+
+      // TeX bold: \textbf{...}
+      const reBold=/\\textbf\{([^}]*)\}/g;
+      let m;
+      while((m=reBold.exec(text))){
         const from=m.index, to=from+m[0].length;
         if(selectionIntersects(from,to)) continue;
-        const span=document.createElement("span"); span.className="katex-chip";
-        try { span.innerHTML=katex.renderToString(m[1],{displayMode:true,throwOnError:false}); }
-        catch{ span.textContent=m[1]; }
-        const mk=cm.markText(posFromIndex(from),posFromIndex(to),{replacedWith:span,atomic:true});
-        span.addEventListener("mousedown",e=>{e.preventDefault();mk.clear();cm.focus();cm.setCursor(posFromIndex(from+2));});
-        mathMarks.push(mk);
+        const innerFrom=from + "\\textbf{".length;
+        const innerTo=to - 1;
+        boldMarks.push(cm.markText(posFromIndex(innerFrom),posFromIndex(innerTo),{className:"bold-inner"}));
       }
 
-      // inline math $...$
-      const reInline=/\$(?:\\\$|[^\n$])+\$/g;
-      while((m=reInline.exec(text))){
-        const raw=m[0]; if(raw.startsWith("$$")||raw.endsWith("$$")) continue;
-        const from=m.index, to=from+raw.length;
+      // Headings: \chapter{}, \section{}, \subsection{}, \subsubsection{}, \paragraph{}, with or without *
+      const reHeading=/\\(chapter|section|subsection|subsubsection|paragraph)\*?\{([^}]*)\}/g;
+      while((m=reHeading.exec(text))){
+        const from=m.index, to=from+m[0].length;
         if(selectionIntersects(from,to)) continue;
-        const expr=raw.slice(1,-1);
-        const span=document.createElement("span"); span.className="katex-chip";
-        try { span.innerHTML=katex.renderToString(expr,{throwOnError:false}); }
-        catch{ span.textContent=expr; }
-        const mk=cm.markText(posFromIndex(from),posFromIndex(to),{replacedWith:span,atomic:true});
-        span.addEventListener("mousedown",e=>{e.preventDefault();mk.clear();cm.focus();cm.setCursor(posFromIndex(from+1));});
-        mathMarks.push(mk);
+        const cmdLen=m[0].indexOf("{")+1;
+        const innerFrom=from+cmdLen;
+        const innerTo=to-1;
+        boldMarks.push(cm.markText(posFromIndex(innerFrom),posFromIndex(innerTo),{className:"bold-inner"}));
       }
-
-// TeX bold: \textbf{...}
-const reBold=/\\textbf\{([^}]*)\}/g;  // matches \textbf{something}
-while((m=reBold.exec(text))){
-  const from=m.index, to=from+m[0].length;
-  if(selectionIntersects(from,to)) continue;
-  // inner content is inside { }
-  const innerFrom=from + "\\textbf{".length;
-  const innerTo=to - 1; // before the closing }
-  boldMarks.push(cm.markText(
-    posFromIndex(innerFrom),
-    posFromIndex(innerTo),
-    {className:"bold-inner"}
-  ));
-}
-
+    }
 
     // --- SN Component Relay ---
     const debounce=(fn,ms)=>{let t;return(...a)=>{clearTimeout(t);t=setTimeout(()=>fn(...a),ms);};};
@@ -156,6 +187,12 @@ while((m=reBold.exec(text))){
 
     cm.on("changes",()=>{renderDecorations();saveNow();});
     cm.on("cursorActivity",renderDecorations);
+
+    // Toggle button
+    document.getElementById("toggle-math").addEventListener("click",()=>{
+      renderMath=!renderMath;
+      renderDecorations();
+    });
   })();
   </script>
 </body>
