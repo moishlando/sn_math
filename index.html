@@ -10,7 +10,7 @@
   <!-- KaTeX CSS -->
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
 
-  <!-- SN theme variables (used for colors) -->
+  <!-- SN theme variables -->
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/sn-extension-api/dist/sn.min.css">
 
   <style>
@@ -22,30 +22,8 @@
       color: var(--sn-stylekit-foreground-color, black);
     }
 
-    .toolbar {
-      height: 32px;
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      padding: 0 8px;
-      background: var(--sn-stylekit-contrast-background-color, #ddd);
-      color: var(--sn-stylekit-foreground-color, black);
-      font-family: monospace;
-      font-size: 14px;
-    }
-
-    .toolbar button {
-      background: none;
-      border: none;
-      cursor: pointer;
-      font-size: 14px;
-      line-height: 1;
-      padding: 0;
-      color: inherit;
-    }
-
     .CodeMirror {
-      height: calc(100vh - 32px);
+      height: 100vh;
       font-family: monospace !important;
       font-size: 14px !important;
       color: var(--sn-stylekit-foreground-color, black);
@@ -57,7 +35,7 @@
       color: var(--sn-stylekit-foreground-color, black);
       display: inline-block;
       vertical-align: middle;
-      line-height: 1em;   /* keep cursor aligned */
+      line-height: 1em;
       padding: 0 2px;
       background: none;
       border-radius: 0;
@@ -69,13 +47,6 @@
   </style>
 </head>
 <body>
-
-  <!-- Minimal toolbar -->
-  <div class="toolbar">
-    <button id="decrease-font">a</button>
-    <button id="increase-font">A</button>
-    <button id="toggle-math">ƒ</button>
-  </div>
 
   <div id="host"></div>
 
@@ -99,8 +70,8 @@
     });
 
     let mathMarks = [], boldMarks = [];
-    let renderMath = true;
-    let currentFontSize = 14; // more normal default
+    let renderMath = true; // toggle flag
+    let currentFontSize = 14; // fixed size
 
     function applyFontSize() {
       cm.getWrapperElement().style.fontSize = currentFontSize + "px";
@@ -210,22 +181,13 @@
     cm.on("changes",()=>{renderDecorations();saveNow();});
     cm.on("cursorActivity",renderDecorations);
 
-    // --- Toolbar buttons ---
-    document.getElementById("decrease-font").addEventListener("click", () => {
-      currentFontSize = Math.max(8, currentFontSize - 1);
-      applyFontSize();
-      renderDecorations();
-    });
-
-    document.getElementById("increase-font").addEventListener("click", () => {
-      currentFontSize = Math.min(24, currentFontSize + 1);
-      applyFontSize();
-      renderDecorations();
-    });
-
-    document.getElementById("toggle-math").addEventListener("click", () => {
-      renderMath = !renderMath;
-      renderDecorations();
+    // --- Keyboard shortcut: Ctrl+M to toggle math ---
+    cm.on("keydown", (cmInstance, event) => {
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "m") {
+        renderMath = !renderMath;
+        renderDecorations();
+        event.preventDefault();
+      }
     });
 
     // Apply initial font size
