@@ -16,16 +16,16 @@
   <style>
     body {
       margin: 0;
-      font-family: monospace !important;  /* always monospace */
-      font-size: 10px !important;         /* always small */
+      font-family: monospace !important;
+      font-size: 10px !important;
       background-color: var(--sn-stylekit-background-color, white);
       color: var(--sn-stylekit-foreground-color, black);
     }
 
     .CodeMirror {
       height: 100vh;
-      font-family: monospace !important;  /* force monospace */
-      font-size: 10px !important;         /* fixed size */
+      font-family: monospace !important;
+      font-size: 10px !important;
       color: var(--sn-stylekit-foreground-color, black);
     }
 
@@ -35,7 +35,7 @@
       color: var(--sn-stylekit-foreground-color, black);
       display: inline-block;
       vertical-align: middle;
-      line-height: 1em;                   /* fixes cursor alignment */
+      line-height: 1em;   /* keep cursor aligned */
       padding: 0 2px;
       background: none;
       border-radius: 0;
@@ -71,6 +71,15 @@
 
     let mathMarks = [], boldMarks = [];
     let renderMath = true; // toggle flag
+    let currentFontSize = 10; // starting size
+
+    function applyFontSize() {
+      cm.getWrapperElement().style.fontSize = currentFontSize + "px";
+      document.querySelectorAll(".katex-chip").forEach(span => {
+        span.style.fontSize = currentFontSize + "px";
+      });
+      cm.refresh();
+    }
 
     function clearMarks(arr){ for(const m of arr) m.clear(); arr.length=0; }
     function posFromIndex(i){ return cm.posFromIndex(i); }
@@ -86,7 +95,6 @@
       const text = cm.getValue();
       clearMarks(mathMarks); clearMarks(boldMarks);
 
-      // only render math if toggle is on
       if(renderMath){
         // block math $$...$$
         const reBlock=/\$\$([\s\S]*?)\$\$/g; let m;
@@ -96,6 +104,7 @@
           const span=document.createElement("span"); span.className="katex-chip";
           try { span.innerHTML=katex.renderToString(m[1],{displayMode:true,throwOnError:false}); }
           catch{ span.textContent=m[1]; }
+          span.style.fontSize = currentFontSize + "px";
           const mk=cm.markText(posFromIndex(from),posFromIndex(to),{replacedWith:span,atomic:true});
           span.addEventListener("mousedown",e=>{e.preventDefault();mk.clear();cm.focus();cm.setCursor(posFromIndex(from+2));});
           mathMarks.push(mk);
@@ -111,6 +120,7 @@
           const span=document.createElement("span"); span.className="katex-chip";
           try { span.innerHTML=katex.renderToString(expr,{throwOnError:false}); }
           catch{ span.textContent=expr; }
+          span.style.fontSize = currentFontSize + "px";
           const mk=cm.markText(posFromIndex(from),posFromIndex(to),{replacedWith:span,atomic:true});
           span.addEventListener("mousedown",e=>{e.preventDefault();mk.clear();cm.focus();cm.setCursor(posFromIndex(from+1));});
           mathMarks.push(mk);
@@ -171,14 +181,32 @@
     cm.on("changes",()=>{renderDecorations();saveNow();});
     cm.on("cursorActivity",renderDecorations);
 
-    // Keyboard shortcut: Ctrl+M / Cmd+M to toggle math rendering
+    // --- Keyboard shortcuts ---
     cm.on("keydown", (cmInstance, event) => {
+      // Ctrl+M toggle math rendering
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "m") {
         renderMath = !renderMath;
         renderDecorations();
         event.preventDefault();
       }
+
+      // Ctrl+, decrease font
+      if ((event.ctrlKey || event.metaKey) && event.key === ",") {
+        currentFontSize = Math.max(6, currentFontSize - 1);
+        applyFontSize();
+        event.preventDefault();
+      }
+
+      // Ctrl+. increase font
+      if ((event.ctrlKey || event.metaKey) && event.key === ".") {
+        currentFontSize = Math.min(40, currentFontSize + 1);
+        applyFontSize();
+        event.preventDefault();
+      }
     });
+
+    // Apply initial font size
+    applyFontSize();
 
   })();
   </script>
